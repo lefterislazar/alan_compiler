@@ -7,7 +7,6 @@ int linenum = 1;
 int block_comment_nestings = 0;
 
 %}
-
 L [A-Za-z]
 D [0-9]
 HD [0-9A-Fa-f]
@@ -16,6 +15,8 @@ C {L}|{D}|[ !#%&()*+,-./:;<=>?\[\]^_{|}~]|\\n|\\t|\\r|\\0|\\\\|\\'|\\\"|\\x{HD}{
 
 %option noyywrap
 %option warn
+%option yylineno
+
 
 %x block_comment
 %%
@@ -72,10 +73,14 @@ C {L}|{D}|[ !#%&()*+,-./:;<=>?\[\]^_{|}~]|\\n|\\t|\\r|\\0|\\\\|\\'|\\\"|\\x{HD}{
 <block_comment>"*)"	{ if(--block_comment_nestings == 0) BEGIN(INITIAL); }
 <block_comment>[^\n(*]	{ /* nothing */ }
 
-<INITIAL,block_comment>.       { fprintf(stderr, "Illegal character %c at line %d\n", yytext[0], linenum); }
 
 --.*\n		{ ++linenum; }
 --.*"<<EOF>>"	{ /* nothing */ }
+
+
+<INITIAL,block_comment>.       { fprintf(stderr, "Illegal character %c at line %d\n", yytext[0], linenum);}
+
+
 %%
 
 #ifdef TOKEN_DBG

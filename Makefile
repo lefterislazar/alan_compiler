@@ -3,7 +3,7 @@
 CC=g++
 CFLAGS=-Wall
 
-alan: lexer.o parser.o
+alan: parser.o lexer.o  ast.o
 	$(CC) $(CFLAGS) -o $@ $^
 
 lexer.o: lexer.cpp lexer.hpp parser.tab.h 
@@ -21,7 +21,10 @@ parser.o : parser.tab.c
 lexer : lexer.l parser.tab.h
 	flex -s -o $@.cpp $<
 	$(CC) -o $@ lexer.cpp -DTOKEN_DBG
+	
+ast.o: ast.cpp
+	$(CC) $(CFLAGS) -c -o $@ $< 
 
 
 clean:
-	rm lex.yy.c lexer.c lexer.cpp parser.tab.h parser.tab.c parser.output *.o 
+	rm  lexer.cpp parser.tab.h parser.tab.c parser.output *.o 

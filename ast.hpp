@@ -1,7 +1,5 @@
 //TODO CHECK ALL FUNCTIONS HAVE RETURN STATEMENTS
 
-
-
 #ifndef __AST_HPP__
 #define __AST_HPP__
 
@@ -10,22 +8,23 @@
 #include <vector>
 #include <map>
 #include <list>
-#include <pair>
+#include <utility>
 
 #include "symbol.hpp"
 
-extern std::map<std::string, int> global_vars;
 
 class AST {
 	public:
 		virtual void printAST(std::ostream &out) const = 0;
 		virtual ~AST() = default;
 		virtual void sem(){};
+		void set_line(int lineno){
+			line=lineno;
+		}
+	protected:
+		int line;
 };
 
-//declarations 
-
-//class FuncDef ;
 
 
 inline std::ostream &operator<<(std::ostream &out, Datatype t) {
@@ -35,6 +34,29 @@ inline std::ostream &operator<<(std::ostream &out, Datatype t) {
 	}	
 	return out;
 }
+
+inline std::ostream &operator<<(std::ostream &out, Types t) {
+	switch(t) {
+		case Type_byte:  out << "byte";  break;
+		case Type_int: out << "int"; break;
+		case Type_byte_array:  out << "byte array";  break;
+		case Type_int_array: out << "int array"; break;
+		case Type_bool: out << "bool"; break;
+
+	}	
+	return out;
+}
+
+
+inline std::ostream &operator<<(std::ostream &out, Rtypes t) {
+	switch(t) {
+		case rtype_int:  out << "int";  break;
+		case rtype_byte: out << "byte"; break;
+		case Proc: out << "proc"; break;
+	}	
+	return out;
+}
+
 
 inline std::ostream &operator<<(std::ostream &out, const AST &ast) {
   	ast.printAST(out);
@@ -56,7 +78,7 @@ class Type : public AST {
 		}
 		void sem() override{
 			if(isArray){
-				if(dt==DATATYPE_byte){
+				if(datatype==DATATYPE_byte){
 					type = Type_byte_array;
 				}
 				else{
@@ -64,7 +86,7 @@ class Type : public AST {
 				}
 			}
 			else{
-				if(dt== DATATYPE_byte){
+				if(datatype== DATATYPE_byte){
 					type = Type_byte;
 				}
 				else{
@@ -99,7 +121,7 @@ class RType : public AST {
 				rtype=Proc;
 			}
 			else{
-				if(dt==DATATYPE_int){
+				if(datatype==DATATYPE_int){
 					rtype= rtype_int;
 				}
 				else{
@@ -109,8 +131,8 @@ class RType : public AST {
 			return rtype;
 		}
 		private:
-			Datatype datatype;
 			bool isProc;
+			Datatype datatype;
 		};
 
 
@@ -131,7 +153,7 @@ class FParDef : public AST {
 			return type.get_type();
 		}
 		void insert_param(){
-			SymbolTableVar.insert(*var,type->get_type,-1);
+			STVar.insert(var,type.get_type(),-1,line);
 		}
 	private:
 		std::string *var;
@@ -160,6 +182,7 @@ class FParList : public AST {
 		void sem() override{
 			for(const auto &i : pardef_list){
 				i->sem();
+
 			}
 		}
 		void insert_params(){
@@ -220,11 +243,11 @@ class CompareCond : public Cond{
 		void sem() override{
 			expr1->sem();
 			expr2->sem();
-			if(expr1->get_type()!=Type_int || expr1->get_type()!=Type_byte ){
-				yyerror("Binary operators can only be applied to integers and bytes\n");
+			if(expr1->get_type()!=Type_int && expr1->get_type()!=Type_byte ){
+				yyerror("Binary operators can only be applied to integers and bytes\n",line);
 			}
 			if(expr1->get_type()!=expr2->get_type()){
-				yyerror("Operands must be of the same type\n");
+				yyerror("Operands must be of the same type\n",line);
 			}
 
 		}		
@@ -319,7 +342,7 @@ class ExprUnitaryOp : public Expr{
 		void sem() override{
 			expr->sem();
 			if(expr->get_type()!=Type_int){
-				yyerror("+ or - can only be applied to integers\n");
+				yyerror("+ or - can only be applied to integers\n",line);
 			}
 			type=Type_int; 
 		}
@@ -337,11 +360,12 @@ class ExprBinaryOp : public Expr{
 		void sem() override{
 			expr1->sem();
 			expr2->sem();
-			if(expr1->get_type()!=Type_int || expr1->get_type()!=Type_byte ){
-				yyerror("Binary operators can only be applied to integers and bytes\n");
+			if(expr1->get_type()!=Type_int && expr1->get_type()!=Type_byte ){
+				yyerror("Binary operators can only be applied to integers and bytes",line);
 			}
 			if(expr1->get_type()!=expr2->get_type()){
-				yyerror("Operands must be of the same type\n");
+				std::cout<<"Lhs is:"<<expr1->get_type()<<"\nRhs is:"<<expr2->get_type()<<std::endl;
+				yyerror("Operands must be of the same type",line);
 			}
 			type = expr1->get_type();
 
@@ -355,7 +379,11 @@ class ExprBinaryOp : public Expr{
 
 
 
-class Lvalue : public Expr{};
+class Lvalue : public Expr{
+	public:
+
+		virtual Types get_data_type() =0 ;
+};
 
 class LvalueId : public Lvalue{
 	public:
@@ -369,21 +397,38 @@ class LvalueId : public Lvalue{
 				out<<")";
 		}
 		void sem() override{
-			VarEntry v =SymbolTableVar.lookup(*var);
-			type=v.type;
+			VarEntry *v =STVar.lookup(var,line);
+			if(expr!=nullptr){
+				expr->sem();
+				if(expr->get_type() != Type_int){
+					yyerror("Index must be of type integer",line);
+				}
+				if(v->type==Type_byte_array){
+					type=Type_byte;
+				}
+				else if(v->type==Type_int_array){
+					type=Type_int;
+				}
+				else{
+					yyerror("Cannot index a non array type",line);
+				}
+			}
+			else{
+				type=v->type;
+			}
 		}
-		Types get_data_type(){
-			if(v.type==Type_int_array || v.type==Type_byte_array){
+		Types get_data_type() override{
+			if(type==Type_int_array || type==Type_byte_array){
 				if(expr==nullptr){
-					yyerror("Cannot assign a value to an entire array");
+					yyerror("Cannot assign a value to an entire array",line);
 				}
 				else{
 					if(expr->get_type()!=Type_int){
-						yyerror("Invalid index type, must be integer");
+						yyerror("Invalid index type, must be integer",line);
 					}
 
 					// TODO to check array boundaries ?
-					if(v.type==Type_int_array){
+					if(type==Type_int_array){
 						return Type_int;
 					}
 					else{
@@ -392,12 +437,11 @@ class LvalueId : public Lvalue{
 
 				}
 			}
-			return v.type;
+			return type;
 		}
 	private:
 		std::string *var;
 		Expr *expr;
-		VarEntry v;
 };
 
 class LvalueStr : public Lvalue{
@@ -409,8 +453,8 @@ class LvalueStr : public Lvalue{
 		void sem() override{
 			type=Type_byte_array;
 		}
-		Types get_data_type(){
-			yyerror("Cannot assign expression to string literal");
+		Types get_data_type() override{
+			yyerror("Cannot assign expression to string literal",line);
 			return Type_byte_array;
 		}
 	private:
@@ -420,7 +464,11 @@ class LvalueStr : public Lvalue{
 
 class Stmt : public AST {
 	public:
-		virtual void check_rtype(Rtypes type){}
+		virtual bool check_rtype(Rtypes type){
+			return false;
+		}
+	protected:
+	
 };
 
 class StmtList : public AST{
@@ -446,10 +494,14 @@ class StmtList : public AST{
 				i->sem();
 			}
 		}
-		void check_rtype(Rtypes type) override{
+		bool check_rtype(Rtypes type){
+			bool ret=false;
 			for(const auto &i : stmt_list){
-				i->check_rtype(type);
+				if(i->check_rtype(type)){
+					ret=true;
+				}
 			}
+			return ret;
 		}
 
 	private:
@@ -466,8 +518,8 @@ class CompoundStmt : public Stmt{
 			stmt_list->sem();
 		}
 
-		void check_rtype(Rtypes type) override{
-			stmt_list->check_rtype(type);
+		bool check_rtype(Rtypes type) override{
+			return stmt_list->check_rtype(type);
 		}
     private:
 		StmtList *stmt_list;
@@ -525,26 +577,28 @@ class FuncCall : public Expr{
 			}
 			out<<")";
         }
-		void sem() override{
-			expr_list->sem();
-			fun = SymbolTableFun.lookup(*var,expr_list->get_list());
-			if(fun.type == )
-			type = fun.type;
-
+		void sem() override{			
+			if(expr_list!=nullptr){
+				expr_list->sem();
+				fun = STFun.lookup(var,expr_list->get_list(),line);
+			}
+			else{
+				fun = STFun.lookup(var,{},line);
+			}
 		}
 		Types get_type() override{
-			if(fun.type==rtype_int){
+			if(fun->rtype==rtype_int){
 				return Type_int;
 			}
-			else if (fun.type==rtype_byte){
+			else if (fun->rtype==rtype_byte){
 				return Type_byte;
 			}
-			yyerror("Cannot have procedures as part of expressions\n");
+			yyerror("Cannot have procedures as part of expressions\n",line);
 			return Type_byte;
 		}
 	private:
 		std::string *var;
-		FunEntry fun;
+		FunEntry *fun;
 		ExprList *expr_list;
 
 };
@@ -559,7 +613,7 @@ class VarDef : public AST{
         }
 		void sem() override{
 			if(is_array && size<1){
-				yyerror("Invalid size for array\n");
+				yyerror("Invalid size for array\n",line);
 			}
 			Types type;
 			if(!is_array){
@@ -578,13 +632,13 @@ class VarDef : public AST{
 					type = Type_byte_array;
 				}
 			}
-			SymbolTableVar.insert(*vr,type,size);
+			STVar.insert(vr,type,size,line);
 		}
     private:
-		bool is_array;
-		int size;
 		std::string *vr;
+		bool is_array;
 		Datatype data_type;
+		int size;
 };
 
 class FuncDef;
@@ -602,14 +656,7 @@ class LocalDef : public AST {
             else
                 out<<*fun;
         }
-		void sem() override{
-			if(fun==nullptr){
-				var->sem();
-			}
-			else{
-				fun->sem();
-			}
-		}
+ 		void sem() override;
     private:
     VarDef * var;
     FuncDef * fun;
@@ -646,7 +693,7 @@ class LocalDefLr : public AST {
 
 class FuncDef : public AST {
 	public:
-		FuncDef(FParList *fpl, RType *rtype,LocalDefLr *local_lr,CompoundStmt *stmt,std::string *id) : par_list(fpl), rtype(rtype),stmt(stmt),local_lr(local_lr),id(id) {}
+		FuncDef(FParList *fpl, RType *rtype,LocalDefLr *local_lr,CompoundStmt *stmt,std::string *id) : par_list(fpl), rtype(rtype),local_lr(local_lr),stmt(stmt),id(id) {}
 		void printAST(std::ostream &out) const override {
 			out << "Funcdef("; // << *id;
 			out << *id <<",";
@@ -654,30 +701,43 @@ class FuncDef : public AST {
 			out << *rtype <<","<< *local_lr<<","<<*stmt<< ")";
 		}
 		void sem() override{
-			par_list->sem();
-			SymbolTableFun.insert(*id,par_list->get_list(),rtype->get_rtype);
-			SymbolTableFun.enterScope();
-			SymbolTableVar.enterScope();
-			par_list->insert_params();
-			local_def->sem();
+			if(par_list!=nullptr){
+				par_list->sem();
+				STFun.insert(id,par_list->get_type_list(),rtype->get_rtype(),line);
+			}
+			else{
+				std::vector<Types> empty_vector={};
+				STFun.insert(id,empty_vector,rtype->get_rtype(),line);
+			}
+			STFun.enterScope();
+			STVar.enterScope();
+			if(par_list!=nullptr){
+				par_list->insert_params();
+			}
+			
+			local_lr->sem();
 			stmt->sem();
-			stmt->check_rtype(rtype->get_rtype);
-			SymbolTableFun.exitScope();
-			SymbolTableVar.exitScope();
+			if((!(stmt->check_rtype(rtype->get_rtype()))) && rtype->get_rtype()!=Proc){
+				yyerror("Non proc function must contain a return statement in every path\n",line);
+			}
+			STFun.exitScope();
+			STVar.exitScope();
 		}
 
 	private:
-		std::string *id;
 		FParList *par_list;
 		RType *rtype;
-        LocalDefLr *local_lr;
-        CompoundStmt *stmt;
+		LocalDefLr *local_lr;
+		CompoundStmt *stmt;
+		std::string *id;
 
 };
 
 
+
+
 inline std::ostream &operator<<(std::ostream &out, const FuncDef &funcdef) {
-	funcdef.printAST(out);f
+	funcdef.printAST(out);
   	return out;
 }
 
@@ -696,7 +756,10 @@ class Assignment: public Stmt {
 		void sem() override{
 			lval->sem();
 			expr->sem();
-			expr->check_type(lval->get_data_type());
+			if(expr->get_type()!=lval->get_data_type()){
+				std::cout<<"Lhs is:"<<lval->get_data_type()<<"\nRhs is:"<<expr->get_type()<<std::endl;
+				yyerror(" Both sides of an Assignment must be of the same type\n ",line);
+			}
 		}
     private:
         Lvalue *lval;
@@ -742,11 +805,13 @@ class StmtIfCond : public Stmt{
 				stmt2->sem();
 			}
 		}
-		void check_rtype(Rtypes type) override{
-			stmt1->check_rtype(type);
+		bool check_rtype(Rtypes type) override{
+			bool ret_if = stmt1->check_rtype(type);
+			bool ret_else=false;
 			if(stmt2!=nullptr){
-				stmt2->check_rtype(type);
+				ret_else = stmt2->check_rtype(type);
 			}
+			return ret_if && ret_else;
 		}
 	private:
 		Cond *cond;
@@ -765,8 +830,9 @@ class WhileStmt : public Stmt{
 			cond->sem();
 			stmt->sem();
 		}
-		void check_rtype(Rtypes type) override{
+		bool check_rtype(Rtypes type) override{
 			stmt->check_rtype(type);
+			return false;
 		}
 	private:
 		Cond *cond;
@@ -795,17 +861,18 @@ class StmtRet : public Stmt{
 		void sem () override{
 			exp->sem();
 		}
-		void check_rtype(Rtypes type) override{
+		bool check_rtype(Rtypes type) override{
 			if( exp==nullptr){
 				if(type!=Proc){
-					yyerror("Error type mismatch in function definition\n");
+					yyerror("Error type mismatch in function definition\n",line);
 				}
 			}
 			else{
 				if(!((exp->get_type()==Type_int && type==rtype_int)||(exp->get_type()==Type_byte && type==rtype_byte))){
-					yyerror("Error type mismatch in function definition\n");
+					yyerror("Error type mismatch in function definition\n",line);
 				}
 			}
+			return true;
 		}
 	private:
 		Expr *exp;
