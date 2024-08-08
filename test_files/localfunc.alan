@@ -1,9 +1,9 @@
-main () : byte
-	local(a : int []) : proc
+main () : proc
+	local(a : int ) : proc
 	{
 	}
 {
-	local();
+	local(1);
 	;
 	;
 	;

@@ -43,7 +43,6 @@ class VarScope{
 };
 
 
-//TODO check if lookup returns pointers in AST
 
 class SymbolTableVar{
  public:
@@ -171,5 +170,119 @@ class SymbolTableFun{
 
  extern SymbolTableFun STFun;
  extern SymbolTableVar STVar;
+
+
+/****************************************************** 
+
+Symbol Table for LLVM
+
+******************************************************/
+
+
+
+
+struct IRVarEntry{
+    Types type;
+    int size;
+    llvm::Value * val;
+    IRVarEntry (){}
+    IRVarEntry(Types type , int size,llvm::Value * val):type(type),size(size),val(val){}
+};
+
+struct IRFunEntry{
+    Rtypes rtype;
+    llvm::Function *function;
+    IRFunEntry (){}
+    IRFunEntry (Rtypes rtype,llvm::Function *fun=nullptr):rtype(rtype),function(fun){}
+};
+
+class IRVarScope{
+    public:
+        IRVarScope(){}
+        void insert (std::string *var,Types type,int size,llvm::Value *v){
+            locals[*var] = IRVarEntry(type,size,v);
+        }
+        IRVarEntry *lookup(std::string *var){
+            if(locals.find(*var) == locals.end()) return nullptr;
+            return &(locals[*var]);
+        }
+    private:
+        std::map<std::string,IRVarEntry> locals;
+};
+
+
+
+class IRSymbolTableVar{
+ public:
+    void insert(std::string *v, Types t,int size, llvm::Value *val) {
+        scopes.back().insert(v, t,size,val);
+    }
+    IRVarEntry *lookup(std::string *v) {
+        for (auto s = scopes.rbegin(); s != scopes.rend(); ++s) {
+            IRVarEntry *e = s->lookup(v);
+            if (e != nullptr) return e;
+        }
+        return nullptr;
+    }
+    void enterScope() {
+        scopes.push_back(IRVarScope());
+    }
+    void exitScope() {
+        scopes.pop_back();
+    }
+    private:
+    std::vector<IRVarScope> scopes;
+};
+
+
+class IRFunScope{
+    public:
+        IRFunScope(){}
+        void insert (std::string *id,std::vector<Types> parameters, Rtypes type,llvm::Function *entry){
+            std::pair<std::string,std::vector<Types>> var(*id,parameters);
+            locals[var] = IRFunEntry(type,entry);
+        }
+        IRFunEntry *lookup(std::string *id,std::vector<Types> parameters){
+            std::pair<std::string,std::vector<Types>> var(*id,parameters);
+            if(locals.find(var) == locals.end()){
+                return nullptr;
+            }
+            return &(locals[var]);
+        }
+    private:
+        std::map<std::pair<std::string,std::vector<Types>>,IRFunEntry> locals;
+};
+
+
+class IRSymbolTableFun{
+    public:
+        IRSymbolTableFun(){
+            enterScope();
+        }
+        ~IRSymbolTableFun(){
+            exitScope();
+        }
+        void insert(std::string *id,std::vector<Types> parameters, Rtypes type,llvm::Function *function) {
+            scopes.back().insert(id, parameters,type,function);
+        }
+        IRFunEntry *lookup(std::string *id,std::vector<Types> parameters) {
+            for (auto s = scopes.rbegin(); s != scopes.rend(); ++s) {
+                IRFunEntry *e = s->lookup(id,parameters);
+                if (e != nullptr) return e;
+            }
+            return nullptr;
+        }
+        void enterScope() {
+            scopes.push_back(IRFunScope());
+        }
+        void exitScope() {
+            scopes.pop_back();
+        }
+    private:
+        std::vector<IRFunScope> scopes;
+};
+
+ extern IRSymbolTableFun IRSTFun;
+ extern IRSymbolTableVar IRSTVar;
 
 #endif

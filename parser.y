@@ -12,6 +12,8 @@
 %code {
 	SymbolTableFun STFun;
 	SymbolTableVar STVar;
+	IRSymbolTableFun IRSTFun;
+    IRSymbolTableVar IRSTVar;
 }
 
 %locations
@@ -101,7 +103,8 @@
 %%
 
 program : func_def 									{ //std::cout << *$1 << std::endl; 
-													  $1->sem();}
+													  $1->sem();
+													  $1->compile_and_dump();}
 		; 
 
 func_def : T_id  '('  ')' ':' r_type  local_def_lr compound_stmt 			{ $$ = new FuncDef(nullptr, $5,$6,$7,$1); $$->set_line(yylineno); }
@@ -204,11 +207,11 @@ cond : "true" 									   { $$ = new CondConst(true); $$->set_line(yylineno);}
 
 %%
 void yyerror(const char *msg,int linenumber) {
-  fprintf(stderr, "Syntax error in line %d: %s\n", linenumber,msg);
-  exit(42);
+  fprintf(stderr, "Semantic error in line %d: %s\n", linenumber,msg);
+  exit(42);  
 }
 void yyerror(const char *msg) {
-  fprintf(stderr, "Syntax error : %s\n",msg);
+  fprintf(stderr, "Syntax error in line %d: %s\n", yylineno,msg);
   exit(42);
 }
 
